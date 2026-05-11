@@ -20,8 +20,9 @@
 按以下顺序尝试获取：
 
 1. **首选：调用 wechat-parser MCP 工具**（如果已配置）
-   - 使用 `parse_wechat_article` 工具，参数：`{"url": "链接", "format": "json", "extract_method": "auto"}`
-   - 如果返回 `success: true`，提取内容，跳到第二步
+   - 使用 `parse_wechat_article` 工具，参数：`{"url": "链接", "format": "json", "detail": "detailed", "extract_method": "auto"}`
+   - **⚠️ 必须传 `"detail": "detailed"`**，否则 concise 模式会截断正文到 3000 字符，无法完成完整拆解
+   - 如果返回 `success: true`，提取 `content` 字段中的文本内容，跳到第二步
 
 2. **备选：尝试浏览器抓取**
 
