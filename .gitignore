@@ -1,0 +1,19 @@
+# 运行时产物
+tmp/
+output/
+
+# 用户上传
+.uploads/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# 临时测试产物
+assets/
+*.html
+!/.claude/**/*.html

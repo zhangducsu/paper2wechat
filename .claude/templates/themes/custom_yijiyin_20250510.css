@@ -1,0 +1,200 @@
+/**
+ * 自定义主题模板 - 易基因风格
+ * 来源：易基因公众号推文（西瓜/甲基化方向）
+ * 提取日期：2025-05-10
+ * 特点：浅色背景、学术严谨风、图文混排、信息框高亮
+ */
+
+/* ==================== 全局容器 ==================== */
+section {
+  font-size: 14px;
+  line-height: 2;
+  box-sizing: border-box;
+  font-style: normal;
+  font-weight: 400;
+  text-align: justify;
+  color: rgb(62, 62, 62);
+}
+
+/* ==================== 一级标题（文章大标题） ==================== */
+h1 {
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  color: rgb(25, 25, 25);
+  letter-spacing: 2px;
+  margin: 20px 10px 15px;
+  line-height: 1.5;
+}
+
+/* ==================== 二级标题（章节标题） ==================== */
+h2 {
+  font-size: 18px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: rgb(25, 25, 25);
+  text-align: center;
+  margin: 25px 10px 15px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgb(200, 200, 200);
+}
+
+/* ==================== 三级标题（子章节） ==================== */
+h3 {
+  font-size: 16px;
+  font-weight: bold;
+  color: rgb(25, 25, 25);
+  margin: 20px 10px 10px;
+  padding-left: 10px;
+  border-left: 3px solid rgb(60, 135, 243);
+}
+
+/* ==================== 段落正文 ==================== */
+p {
+  font-size: 14px;
+  line-height: 2;
+  color: rgb(62, 62, 62);
+  text-align: justify;
+  margin: 10px 10px;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== 加粗文字 ==================== */
+strong {
+  font-weight: bold;
+  color: rgb(25, 25, 25);
+}
+
+/* ==================== 引用块/信息框 ==================== */
+blockquote {
+  background-color: rgba(246, 246, 246, 0.9);
+  padding: 15px 20px;
+  margin: 15px 10px;
+  border-left: 3px solid rgb(60, 135, 243);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: rgb(62, 62, 62);
+}
+
+/* ==================== 图片 ==================== */
+img {
+  max-width: 100%;
+  width: 100%;
+  vertical-align: middle;
+  margin: 10px 0;
+  border-radius: 4px;
+}
+
+/* ==================== 图片说明/图注 ==================== */
+/* 使用 p 标签 + 小字号 */
+p.caption {
+  font-size: 12px;
+  color: rgb(139, 139, 139);
+  text-align: center;
+  line-height: 1.6;
+  margin: 5px 10px 15px;
+}
+
+/* ==================== 链接 ==================== */
+a {
+  color: rgb(12, 111, 254);
+  text-decoration: none;
+}
+
+/* ==================== 表格 ==================== */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 15px 10px;
+  font-size: 13px;
+}
+
+th {
+  border: 1px solid rgb(200, 200, 200);
+  padding: 8px 10px;
+  font-weight: bold;
+  background-color: rgba(246, 246, 246, 0.9);
+  text-align: center;
+}
+
+td {
+  border: 1px solid rgb(200, 200, 200);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+/* ==================== 分隔线 ==================== */
+hr {
+  border: none;
+  border-top: 1px solid rgb(220, 220, 220);
+  margin: 20px 10px;
+}
+
+/* ==================== 无序列表 ==================== */
+ul {
+  list-style-type: disc;
+  padding-left: 20px;
+  list-style-position: outside;
+  margin: 10px 10px;
+  line-height: 2;
+}
+
+li {
+  margin: 5px 0;
+  font-size: 14px;
+  color: rgb(62, 62, 62);
+}
+
+/* ==================== 有序列表 ==================== */
+ol {
+  padding-left: 20px;
+  margin: 10px 10px;
+  line-height: 2;
+}
+
+/* ==================== 代码/行内代码 ==================== */
+code {
+  font-size: 13px;
+  color: rgb(12, 111, 254);
+  background-color: rgba(246, 246, 246, 0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+pre {
+  background-color: rgba(246, 246, 246, 0.7);
+  padding: 15px 20px;
+  margin: 15px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+/* ==================== 高亮信息卡片 ==================== */
+/* 用于研究亮点、关键数据等 */
+.highlight-box {
+  background-color: rgba(246, 246, 246, 0.9);
+  padding: 15px 20px;
+  margin: 15px 10px;
+  border-radius: 6px;
+  border: 1px solid rgb(220, 220, 220);
+}
+
+/* ==================== 参考文献/脚注 ==================== */
+.reference {
+  font-size: 12px;
+  color: rgb(139, 139, 139);
+  line-height: 1.8;
+  margin: 5px 10px;
+}
+
+/* ==================== 底部信息 ==================== */
+.footer {
+  font-size: 11px;
+  color: rgb(139, 139, 139);
+  text-align: center;
+  line-height: 1.6;
+  margin: 20px 10px;
+}
