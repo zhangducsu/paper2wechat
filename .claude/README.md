@@ -40,6 +40,8 @@ python .claude/scripts/check_env.py --json-output .claude/tmp/env_status.json
 
 Markdown 渲染支持标题、列表、表格、代码块、图片、脚注、任务列表、高亮标记，以及行内/块级公式的微信兼容文本呈现。
 
+推文主题色从公司 Logo 自动提取；Logo 含多种颜色时，会围绕主色生成匹配的和谐色系。
+
 封面背景由 AI 生图功能生成，脚本再用本地 PIL 叠加标题和公司 Logo 水印；默认输出 `900x383` 封面和 `383x383` 方图。
 
 ### 4. 质量门禁
@@ -90,6 +92,7 @@ python .claude/scripts/run_quality_checks.py
 | `.claude/scripts/md2wechat.py` | Markdown → 微信兼容 HTML，使用 Markdown 库解析并注入内联样式 |
 | `.claude/scripts/run_quality_checks.py` | 本地/CI 共用质量门禁入口 |
 | `.claude/scripts/sync_assets.py` | 复制全局素材到 figures，并规范 Markdown 图片路径 |
+| `.claude/scripts/theme_palette.py` | 从公司 Logo 提取主题色并生成和谐色系 |
 | `.claude/scripts/validate_run.py` | 校验 content、Markdown、HTML 图片引用与微信兼容性 |
 
 ## 详细文档

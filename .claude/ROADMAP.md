@@ -15,6 +15,7 @@
 - P3质量保障基线：`run_quality_checks.py` + `tests/fixtures/` + `.github/workflows/test.yml`
 - P4功能增强基线：支持数学公式、脚注、任务列表和高亮标记
 - 封面生成基线：AI 生图生成封面背景，`generate_cover.py` 本地生成封面图和方图，添加公司 Logo 水印
+- 品牌主题色基线：`theme_palette.py` 从公司 Logo 提取推文主色，并生成匹配的和谐色系
 
 **已知遗留问题**：
 1. PDF元信息/章节解析仍是启发式，复杂版式需要人工复核
@@ -89,6 +90,7 @@
 | `scripts/generate_cover.py` | 支持 `--background-source ai_generated` 与 `--require-ai-background` 强制 AI 背景 |
 | `scripts/generate_cover.py` | 添加公司 Logo 半透明水印，报告 `logo_watermark_applied` |
 | `scripts/generate_cover.py` | 报告 `background_source=ai_generated`、`ai_generated_background=true` 与 `ai_watermark=false` |
+| `scripts/theme_palette.py` | 从公司 Logo 提取主题色，并输出 `theme_palette.json` |
 | `scripts/validate_run.py` | 增加封面图片可读性、尺寸和 AI 背景报告校验 |
 | `tests/test_generate_cover.py` | 覆盖封面尺寸、方图尺寸、Logo 水印报告、AI 背景报告和无 AI 水印标记 |
 

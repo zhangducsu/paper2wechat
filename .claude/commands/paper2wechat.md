@@ -118,13 +118,15 @@ mkdir -p .claude/tmp/extracted/figures output/figures
 python3 .claude/scripts/md2wechat.py .claude/tmp/extracted/article.md \
   --output output/文章标题.html \
   --theme default \
-  --primary-color "#20B2AA"
+  --theme-logo .claude/templates/references/global_assets/logo.jpg \
+  --palette-output output/theme_palette.json
 
 # 使用自定义模板
 python3 .claude/scripts/md2wechat.py .claude/tmp/extracted/article.md \
   --output output/文章标题.html \
   --template .claude/templates/themes/custom_20250510.css \
-  --primary-color "#20B2AA"
+  --theme-logo .claude/templates/references/global_assets/logo.jpg \
+  --palette-output output/theme_palette.json
 ```
 
 同时将图片复制到输出目录：
@@ -152,10 +154,11 @@ python .claude/scripts/generate_cover.py \
   --background-source ai_generated \
   --require-ai-background \
   --logo .claude/templates/references/global_assets/logo.jpg \
+  --theme-logo .claude/templates/references/global_assets/logo.jpg \
+  --palette-output output/cover_theme_palette.json \
   --output output/文章标题_cover.png \
   --square-output output/文章标题_cover_square.png \
-  --json-output output/cover_report.json \
-  --primary-color "#20B2AA"
+  --json-output output/cover_report.json
 ```
 
 要求：
@@ -163,9 +166,11 @@ python .claude/scripts/generate_cover.py \
 2. 封面图尺寸为 `900x383`
 3. 同时生成中心安全区方图 `383x383`
 4. 使用公司 Logo 作为半透明水印
-5. `cover_report.json` 中 `background_source` 必须为 `ai_generated`
-6. `cover_report.json` 中 `ai_generated_background` 必须为 `true`
-7. `cover_report.json` 中 `ai_watermark` 必须为 `false`，`logo_watermark_applied` 必须为 `true`
+5. 推文和封面主题色必须来自公司 Logo，生成 `theme_palette.json`
+6. 如果 Logo 含多种颜色，以主色为中心生成匹配的和谐色系
+7. `cover_report.json` 中 `background_source` 必须为 `ai_generated`
+8. `cover_report.json` 中 `ai_generated_background` 必须为 `true`
+9. `cover_report.json` 中 `ai_watermark` 必须为 `false`，`logo_watermark_applied` 必须为 `true`
 
 ---
 
@@ -202,6 +207,7 @@ python .claude/scripts/generate_cover.py \
    - `文章标题_cover.png`（微信公众号封面图，900x383）
    - `文章标题_cover_square.png`（中心安全区方图，383x383）
    - `ai_cover_background.png`（AI 生图封面背景）
+   - `theme_palette.json`（从公司 Logo 提取的推文主题色和和谐色系）
    - `figures/` 目录（所有论文图片）
    - `文章标题.md`（Markdown源文件，方便后续修改）
    - `cover_report.json`（封面生成报告）

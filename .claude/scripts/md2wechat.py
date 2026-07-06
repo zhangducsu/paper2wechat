@@ -26,6 +26,8 @@ except ImportError as exc:  # pragma: no cover - 环境检查会覆盖，这里�
     print(f"缺少依赖: {exc}. 请先运行 pip install -r requirements.txt", file=sys.stderr)
     raise SystemExit(1)
 
+from theme_palette import derive_theme_palette
+
 
 DEFAULT_VARS = {
     "--md-font-family": "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif",
@@ -426,8 +428,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--template", help="自定义CSS模板文件路径")
     parser.add_argument("--inline-template", help="自定义内联样式 JSON 文件路径")
     parser.add_argument("--primary-color", "-c", default="#20B2AA", help="主题色")
+    parser.add_argument("--theme-logo", help="从公司 Logo 自动提取主题色")
+    parser.add_argument("--palette-output", help="可选：输出 Logo 调色板 JSON")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
+    palette = derive_theme_palette(Path(args.theme_logo)) if args.theme_logo else None
+    primary_color = palette["primary"] if palette else args.primary_color
     input_path = Path(args.input)
     output_path = Path(args.output) if args.output else input_path.with_suffix(".html")
     render_markdown_file(
@@ -436,12 +442,16 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         theme=args.theme,
         template=args.template,
         inline_template=args.inline_template,
-        primary_color=args.primary_color,
+        primary_color=primary_color,
     )
+    if palette and args.palette_output:
+        output = Path(args.palette_output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(palette, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print(f"转换完成: {output_path}")
     print(f"主题: {args.template or 'doocs/' + args.theme}")
-    print(f"主题色: {args.primary_color}")
+    print(f"主题色: {primary_color}")
     return 0
 
 

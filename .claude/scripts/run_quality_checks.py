@@ -68,8 +68,10 @@ def build_steps(skip_env: bool) -> List[Dict[str, Any]]:
                 ".claude/tmp/qa/sample_article.html",
                 "--theme",
                 "default",
-                "--primary-color",
-                "#20B2AA",
+                "--theme-logo",
+                ".claude/templates/references/global_assets/logo.jpg",
+                "--palette-output",
+                ".claude/tmp/qa/theme_palette.json",
             ],
         )
     )
@@ -91,6 +93,10 @@ def build_steps(skip_env: bool) -> List[Dict[str, Any]]:
                 "--require-ai-background",
                 "--logo",
                 ".claude/templates/references/global_assets/logo.jpg",
+                "--theme-logo",
+                ".claude/templates/references/global_assets/logo.jpg",
+                "--palette-output",
+                ".claude/tmp/qa/cover_theme_palette.json",
                 "--output",
                 ".claude/tmp/qa/sample_cover.png",
                 "--square-output",

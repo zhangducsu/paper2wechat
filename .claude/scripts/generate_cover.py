@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
+from theme_palette import derive_theme_palette
+
 
 DEFAULT_WIDTH = 900
 DEFAULT_HEIGHT = 383
@@ -337,8 +339,14 @@ def main() -> int:
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     parser.add_argument("--safe-size", type=int, default=DEFAULT_SAFE_SIZE)
     parser.add_argument("--primary-color", default=DEFAULT_PRIMARY_COLOR)
+    parser.add_argument("--theme-logo", help="从公司 Logo 自动提取主题色；默认可与 --logo 相同")
+    parser.add_argument("--palette-output", help="可选：输出 Logo 调色板 JSON")
     parser.add_argument("--json-output", help="可选：生成报告 JSON")
     args = parser.parse_args()
+
+    logo_path = Path(args.logo)
+    palette = derive_theme_palette(Path(args.theme_logo)) if args.theme_logo else None
+    primary_color = palette["primary"] if palette else args.primary_color
 
     try:
         report = create_cover(
@@ -346,17 +354,19 @@ def main() -> int:
             output_path=Path(args.output),
             square_output_path=Path(args.square_output) if args.square_output else None,
             figures_dir=Path(args.figures_dir),
-            logo_path=Path(args.logo),
+            logo_path=logo_path,
             title=args.title,
             subtitle=args.subtitle,
             background_path=Path(args.background) if args.background else None,
             width=args.width,
             height=args.height,
             safe_size=args.safe_size,
-            primary_color=args.primary_color,
+            primary_color=primary_color,
             background_source=args.background_source,
             require_ai_background=args.require_ai_background,
         )
+        if palette:
+            report["theme_palette"] = palette
     except ValueError as exc:
         report = {
             "schema_version": 1,
@@ -374,6 +384,10 @@ def main() -> int:
 
     text = json.dumps(report, ensure_ascii=False, indent=2)
     print(text)
+    if palette and args.palette_output:
+        output = Path(args.palette_output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(palette, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if args.json_output:
         output = Path(args.json_output)
         output.parent.mkdir(parents=True, exist_ok=True)
