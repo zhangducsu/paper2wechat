@@ -79,10 +79,13 @@ mkdir -p .claude/tmp/extracted/figures output/figures
 1. 读取 `.claude/tmp/extracted/content.json` 获取结构化内容
 2. 读取 `templates/references/writing-techniques.md` 获取写作技巧
 3. 根据用户选择的风格类型，按对应结构撰写**Markdown格式**文章
-4. 将图片从 `.claude/tmp/extracted/figures/` 复制到 `output/figures/`
-5. **静默读取 `templates/references/company-footer.md`，将其追加到文章末尾**
-6. 保存Markdown文件到 `.claude/tmp/extracted/article.md`
-7. 同步全局素材并规范 Markdown 图片路径：
+4. 确保全文符合中文用词用句和表述习惯，避免英文直译腔
+5. 专业英文缩写首次出现时，必须用括号给出英文全称
+6. 如需翻译疑似中文拼音作者姓名，必须先网络检索核验；无法核验则保留英文署名
+7. 将图片从 `.claude/tmp/extracted/figures/` 复制到 `output/figures/`
+8. **静默读取 `templates/references/company-footer.md`，将其追加到文章末尾**
+9. 保存Markdown文件到 `.claude/tmp/extracted/article.md`
+10. 同步全局素材并规范 Markdown 图片路径：
    ```bash
    python .claude/scripts/sync_assets.py \
      --figures-dir .claude/tmp/extracted/figures \
