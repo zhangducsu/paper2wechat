@@ -25,8 +25,9 @@
 - **文件**：`extractor.md`
 - **输入**：PDF 文件路径
 - **输出**：`.claude/tmp/extracted/` 下的结构化 JSON + 图片
-- **工具**：`extract_figures.py`（PyMuPDF）、pdfplumber
+- **工具**：`extract_content.py`（统一编排）、`extract_figures.py`（PyMuPDF）、pdfplumber、`validate_run.py`
 - **提取内容**：论文元信息、章节文本、Figures（>200x200px）、Figure Legends、关键数据
+- **状态文件**：`run_state.json` 记录输入 PDF、输出产物、图片数量和确定性校验结果
 
 ### Agent 2: writer（科普文章撰写器）
 - **文件**：`writer.md`
@@ -46,7 +47,7 @@
 
 ```
 PDF文件
-  → extractor → content.json + figures/
+  → extractor → content.json + full_text.txt + figure_map.json + run_state.json + figures/
   → writer → article.md (Markdown)
   → md2wechat.py → draft.html (带内联样式)
   → reviewer → final.html (可直接粘贴到微信编辑器)

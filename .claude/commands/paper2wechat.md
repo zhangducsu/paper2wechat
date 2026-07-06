@@ -8,6 +8,28 @@ PDF论文转微信公众号科普文章 - 多Agent工作组
 
 ---
 
+### 第零步：P0 环境基线检查
+
+正式处理 PDF 前必须先检查运行环境：
+
+```bash
+# Windows PowerShell 推荐
+powershell -ExecutionPolicy Bypass -File .claude/scripts/doctor.ps1
+
+# 其他环境
+python .claude/scripts/check_env.py --json-output .claude/tmp/env_status.json
+```
+
+要求：
+1. `env_status.json` 或终端 JSON 输出中的 `status` 必须为 `pass`
+2. Python 必须是可执行解释器，不能是 WindowsApps 0 字节占位别名
+3. `PyMuPDF`、`pdfplumber`、`markdown`、`beautifulsoup4` 必须可导入
+4. `.claude/tmp/` 与 `output/` 必须可写
+
+若检查失败，停止工作流并向用户报告失败项。
+
+---
+
 ### 第一步：初始化工作目录
 
 创建临时工作目录：
@@ -22,10 +44,17 @@ mkdir -p .claude/tmp/extracted/figures output/figures
 **角色**：参考 `agents/extractor.md` 中的系统提示
 
 执行以下操作：
-1. 使用 `scripts/extract_figures.py` 将PDF图片提取到 `.claude/tmp/extracted/figures/`
-2. 使用 `pdfplumber` 提取全文文本，按章节结构化
-3. 提取论文元信息（标题、作者、期刊、年份、DOI）
-4. 将提取的结构化内容保存为 `.claude/tmp/extracted/content.json`
+1. 优先使用确定性抽取脚本，一次性生成文本、图片、figure map、content schema 与运行状态：
+   ```bash
+   python .claude/scripts/extract_content.py "$ARGUMENTS" --output-dir .claude/tmp/extracted
+   ```
+2. 确认以下文件存在：
+   - `.claude/tmp/extracted/content.json`
+   - `.claude/tmp/extracted/full_text.txt`
+   - `.claude/tmp/extracted/figures/figure_map.json`
+   - `.claude/tmp/extracted/validation.json`
+   - `.claude/tmp/extracted/run_state.json`
+3. `run_state.json` 与 `validation.json` 中的 `status` 必须为 `pass`，否则停止工作流并报告失败项。
 
 ---
 
@@ -53,6 +82,14 @@ mkdir -p .claude/tmp/extracted/figures output/figures
 4. 将图片从 `.claude/tmp/extracted/figures/` 复制到 `output/figures/`
 5. **静默读取 `templates/references/company-footer.md`，将其追加到文章末尾**
 6. 保存Markdown文件到 `.claude/tmp/extracted/article.md`
+7. 同步全局素材并规范 Markdown 图片路径：
+   ```bash
+   python .claude/scripts/sync_assets.py \
+     --figures-dir .claude/tmp/extracted/figures \
+     --article .claude/tmp/extracted/article.md
+   python .claude/scripts/sync_assets.py \
+     --figures-dir output/figures
+   ```
 
 **重要**：输出Markdown格式，不要输出HTML！
 
@@ -97,7 +134,42 @@ cp .claude/tmp/extracted/figures/* output/figures/
 
 ---
 
-### 第七步：Agent 3 - 排版审核
+### 第七步：生成微信公众号封面图
+
+先使用 AI 生图功能生成封面背景图，要求画面无文字、无 Logo、无 AI 生图水印，并保存为：
+
+```text
+output/ai_cover_background.png
+```
+
+再使用 `scripts/generate_cover.py` 本地叠加文章标题和公司 Logo 水印：
+
+```bash
+python .claude/scripts/generate_cover.py \
+  --article output/文章标题.md \
+  --figures-dir output/figures \
+  --background output/ai_cover_background.png \
+  --background-source ai_generated \
+  --require-ai-background \
+  --logo .claude/templates/references/global_assets/logo.jpg \
+  --output output/文章标题_cover.png \
+  --square-output output/文章标题_cover_square.png \
+  --json-output output/cover_report.json \
+  --primary-color "#20B2AA"
+```
+
+要求：
+1. 封面背景必须由 AI 生图功能生成，不能用文章首图或本地渐变图冒充
+2. 封面图尺寸为 `900x383`
+3. 同时生成中心安全区方图 `383x383`
+4. 使用公司 Logo 作为半透明水印
+5. `cover_report.json` 中 `background_source` 必须为 `ai_generated`
+6. `cover_report.json` 中 `ai_generated_background` 必须为 `true`
+7. `cover_report.json` 中 `ai_watermark` 必须为 `false`，`logo_watermark_applied` 必须为 `true`
+
+---
+
+### 第八步：Agent 3 - 排版审核
 
 **角色**：参考 `agents/reviewer.md` 中的系统提示
 
@@ -106,23 +178,43 @@ cp .claude/tmp/extracted/figures/* output/figures/
 2. 按审核清单逐项检查（图片完整性、图文引用、微信兼容性、排版质量、内容质量）
 3. **静默读取 `templates/references/article-checklist.md`，执行风格类型专属质检**
 4. **执行商业闭环检查**（引流矩阵、顺滑过渡、转化组件）
-5. 修复发现的所有问题
+5. 使用确定性校验脚本复核图片引用与微信兼容性：
+   ```bash
+   python .claude/scripts/validate_run.py \
+     --content .claude/tmp/extracted/content.json \
+     --base-dir .claude/tmp/extracted \
+     --article output/文章标题.md \
+     --html output/文章标题.html \
+     --output-dir output \
+     --cover output/文章标题_cover.png \
+     --cover-report output/cover_report.json \
+     --require-ai-cover \
+     --json-output output/validation.json
+   ```
+6. 修复发现的所有问题，直到 `output/validation.json` 中 `status` 为 `pass`
 
 ---
 
-### 第八步：输出最终结果
+### 第九步：输出最终结果
 
 1. 在 `output/` 下生成：
    - `文章标题.html`（最终可直接粘贴的HTML）
+   - `文章标题_cover.png`（微信公众号封面图，900x383）
+   - `文章标题_cover_square.png`（中心安全区方图，383x383）
+   - `ai_cover_background.png`（AI 生图封面背景）
    - `figures/` 目录（所有论文图片）
    - `文章标题.md`（Markdown源文件，方便后续修改）
+   - `cover_report.json`（封面生成报告）
+   - `validation.json`（最终确定性校验报告）
    
 2. 向用户报告：
    - 文章标题
    - 选择的风格类型
    - 选择的排版主题
    - 使用了哪些Figures
+   - 封面图路径、AI 背景图路径、是否添加 Logo 水印、是否无 AI 生图水印
    - 审核结果（通过/修复项）
+   - 确定性校验结果（`validation.json` 状态）
    - 文件路径
 
 ---

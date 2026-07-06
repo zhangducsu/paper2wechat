@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "source_pdf": "tests/fixtures/sample.pdf",
+  "page_count": 1,
+  "metadata": {
+    "title": "Fixture Paper",
+    "authors": ["Fixture Author"],
+    "journal": "Fixture Journal",
+    "year": 2026,
+    "doi": "10.0000/fixture"
+  },
+  "sections": {
+    "abstract": "Fixture abstract",
+    "introduction": "Fixture introduction",
+    "methods": "Fixture methods",
+    "results": "Fixture results",
+    "discussion": "Fixture discussion",
+    "conclusion": "Fixture conclusion"
+  },
+  "figures": [
+    {
+      "id": "fig1",
+      "number": 1,
+      "caption": "Fig. 1. Test figure",
+      "file_path": "figures/fig1.png",
+      "page": 1,
+      "size": "1x1"
+    }
+  ],
+  "key_data": {
+    "genes": ["GENE1"],
+    "p_values": [],
+    "metrics": {},
+    "key_findings": ["Fixture finding"]
+  }
+}

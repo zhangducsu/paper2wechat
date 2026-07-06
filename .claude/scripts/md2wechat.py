@@ -1,279 +1,393 @@
 #!/usr/bin/env python3
 """
-Markdown → 微信公众号HTML转换器
-支持doocs/md主题样式和用户自定义模板
+Markdown → 微信公众号 HTML 转换器。
 
-用法:
-  python md2wechat.py input.md --theme default --primary-color #20B2AA
-  python md2wechat.py input.md --template templates/themes/custom.css
+P2 基线：
+- 使用 Python-Markdown 解析 Markdown，不再手写列表/表格状态机；
+- 使用 BeautifulSoup 给允许的 HTML 标签写入内联样式；
+- 默认转义原始 HTML 标签，避免 Markdown 中的 HTML 直通到最终稿；
+- 支持 CSS 主题和 `_inline.json` 内联样式模板。
 """
 
+from __future__ import annotations
+
+import argparse
+import json
 import re
 import sys
-import os
-import argparse
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
 
-# 默认CSS变量值（模拟doocs/md的CSS变量系统）
+try:
+    import markdown
+    from bs4 import BeautifulSoup
+    from bs4.element import NavigableString, Tag
+except ImportError as exc:  # pragma: no cover - 环境检查会覆盖，这里给 CLI 友好报错
+    print(f"缺少依赖: {exc}. 请先运行 pip install -r requirements.txt", file=sys.stderr)
+    raise SystemExit(1)
+
+
 DEFAULT_VARS = {
-    '--md-font-family': "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-    '--md-font-size': '15px',
-    '--md-primary-color': '#20B2AA',
-    '--foreground': '0 0% 0%',  # HSL black
-    '--blockquote-background': 'rgba(0,0,0,0.03)',
+    "--md-font-family": "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    "--md-font-size": "15px",
+    "--md-primary-color": "#20B2AA",
+    "--foreground": "0 0% 0%",
+    "--blockquote-background": "rgba(0,0,0,0.03)",
+}
+
+DEFAULT_STYLES = {
+    "section": "padding:16px; max-width:100%; box-sizing:border-box;",
+    "h1": "padding:0 1em; border-bottom:2px solid {primary}; margin:2em auto 1em; color:#111; font-size:18px; font-weight:bold; text-align:center;",
+    "h2": "padding:0.2em 0.5em; margin:2.5em auto 1.2em; color:#fff; background:{primary}; font-size:18px; font-weight:bold; text-align:center; border-radius:4px;",
+    "h3": "padding-left:8px; border-left:3px solid {primary}; margin:2em 8px 0.75em 0; color:#111; font-size:16px; font-weight:bold; line-height:1.3;",
+    "h4": "margin:2em 8px 0.5em; color:{primary}; font-size:15px; font-weight:bold;",
+    "h5": "margin:1.5em 8px 0.5em; color:{primary}; font-size:15px; font-weight:bold;",
+    "h6": "margin:1.5em 8px 0.5em; color:{primary}; font-size:15px; font-weight:bold;",
+    "p": "margin:1.5em 8px; letter-spacing:0.05em; color:#333; line-height:1.75;",
+    "blockquote": "font-style:normal; padding:1em; border-left:4px solid {primary}; border-radius:6px; color:#333; background:rgba(0,0,0,0.03); margin:1em 8px;",
+    "ul": "list-style-type:disc; padding-left:1.4em; margin:1em 8px; line-height:1.75;",
+    "ol": "padding-left:1.4em; margin:1em 8px; line-height:1.75;",
+    "li": "margin:0.35em 0;",
+    "strong": "color:{primary}; font-weight:bold;",
+    "em": "font-style:italic;",
+    "a": "color:#576b95; text-decoration:none;",
+    "img": "display:block; max-width:100%; margin:0.1em auto 0.5em; border-radius:4px; box-shadow:0 2px 12px rgba(0,0,0,0.12);",
+    "table": "border-collapse:collapse; margin:1.5em 8px; width:100%; max-width:100%;",
+    "thead": "",
+    "tbody": "",
+    "tr": "",
+    "th": "border:1px solid #dfdfdf; padding:0.35em 0.6em; font-weight:bold; background:rgba(0,0,0,0.05); text-align:center;",
+    "td": "border:1px solid #dfdfdf; padding:0.35em 0.6em; text-align:left;",
+    "hr": "border-style:solid; border-width:2px 0 0; border-color:rgba(0,0,0,0.1); height:0.4em; margin:1.5em 0;",
+    "pre": "font-size:90%; overflow-x:auto; border-radius:8px; padding:0.75em 1em; background:#f6f8fa; margin:1em 8px; white-space:pre-wrap;",
+    "code": "font-size:90%; color:#d14; background:rgba(27,31,35,0.05); padding:3px 5px; border-radius:4px;",
+    "code_block": "font-size:90%; color:#d14; background:none; white-space:pre-wrap;",
+    "mark": "background:rgba(255,235,59,0.45); color:#111; padding:0 0.2em; border-radius:2px;",
+    "math_inline": "font-family:Menlo,Consolas,monospace; color:{primary}; background:rgba(0,0,0,0.04); padding:0.05em 0.35em; border-radius:4px;",
+    "math_block": "display:block; font-family:Menlo,Consolas,monospace; color:{primary}; background:rgba(0,0,0,0.04); padding:0.75em 1em; margin:1em 8px; border-radius:6px; overflow-x:auto; white-space:pre-wrap;",
+    "sup": "font-size:0.75em; line-height:0; vertical-align:super;",
+    "div": "margin:1em 8px;",
+}
+
+ALLOWED_ATTRS = {
+    "a": {"href", "title"},
+    "img": {"src", "alt", "title"},
+}
+
+DISALLOWED_STYLE_KEYS = {
+    "-webkit-line-clamp",
+    "animation",
+    "background-image",
+    "filter",
+    "float",
+    "position",
+    "transform",
+    "transition",
+    "z-index",
 }
 
 
-def resolve_css_vars(css_text, variables=None):
-    """将CSS变量替换为实际值"""
-    if variables is None:
-        variables = DEFAULT_VARS
-    
-    def replace_var(match):
-        var_name = match.group(1)
-        value = variables.get(var_name, match.group(0))
-        # 处理 hsl(var(--foreground)) 格式
-        if value.startswith('0 0%'):
-            return 'hsl(0, 0%, 0%)'
-        return value
-    
-    # 替换 var(--xxx) 格式
-    result = re.sub(r'var\(([^)]+)\)', replace_var, css_text)
-    # 替换 calc() 中的 var()
-    result = re.sub(r'calc\(([^)]+)\)', lambda m: m.group(0), result)
+def resolve_css_vars(css_text: str, variables: Optional[Dict[str, str]] = None) -> str:
+    values = dict(DEFAULT_VARS)
+    if variables:
+        values.update(variables)
+
+    def replace_hsl_var(match: re.Match) -> str:
+        value = values.get(match.group(1), "0 0% 0%")
+        return f"hsl({value})"
+
+    def replace_var(match: re.Match) -> str:
+        return values.get(match.group(1), match.group(0))
+
+    css_text = re.sub(r"hsl\(var\((--[^)]+)\)\)", replace_hsl_var, css_text)
+    css_text = re.sub(r"var\((--[^)]+)\)", replace_var, css_text)
+    css_text = re.sub(
+        r"calc\(\s*([0-9.]+)px\s*\*\s*([0-9.]+)\s*\)",
+        lambda m: f"{float(m.group(1)) * float(m.group(2)):.2f}px",
+        css_text,
+    )
+    return css_text
+
+
+def parse_style(style: str) -> Dict[str, str]:
+    parsed: Dict[str, str] = {}
+    for declaration in style.split(";"):
+        if ":" not in declaration:
+            continue
+        key, value = declaration.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not key or not value or key in DISALLOWED_STYLE_KEYS or key.startswith("-webkit-"):
+            continue
+        parsed[key] = value
+    return parsed
+
+
+def style_dict_to_text(style: Dict[str, str]) -> str:
+    return "; ".join(f"{key}:{value}" for key, value in style.items() if value)
+
+
+def merge_styles(*styles: str) -> str:
+    merged: Dict[str, str] = {}
+    for style in styles:
+        merged.update(parse_style(style))
+    return style_dict_to_text(merged)
+
+
+def merge_style_maps(base: Dict[str, str], overlay: Dict[str, str]) -> Dict[str, str]:
+    result = dict(base)
+    for tag, style in overlay.items():
+        result[tag] = merge_styles(result.get(tag, ""), style)
     return result
 
 
-def parse_css_to_inline_styles(css_text, primary_color=None):
-    """将CSS规则解析为元素→内联样式的映射"""
-    if primary_color:
-        DEFAULT_VARS['--md-primary-color'] = primary_color
-    
-    css_text = resolve_css_vars(css_text)
-    
-    # 简化calc表达式
-    css_text = re.sub(r'calc\((var\(--md-font-size\)) \* ([\d.]+)\)', 
-                      lambda m: f"{float(m.group(2)) * 15}px", css_text)
-    css_text = re.sub(r'calc\((var\(--md-font-size\)) \* ([\d.]+)\)',
-                      lambda m: f"{float(m.group(2)) * 15}px", css_text)
-    
-    styles_map = {}
-    
-    # 解析CSS规则
-    pattern = r'([^{}]+)\{([^{}]+)\}'
-    for match in re.finditer(pattern, css_text):
-        selector = match.group(1).strip()
-        declarations = match.group(2).strip()
-        
-        # 跳过伪元素和复杂选择器
-        if ':' in selector and not selector.startswith(':'):
+def tag_from_selector(selector: str) -> Optional[str]:
+    selector = selector.strip()
+    if not selector:
+        return None
+    if any(token in selector for token in ["#", ".", "[", ":", "+", "~"]):
+        return None
+    first = re.split(r"\s+|>", selector, maxsplit=1)[0].strip()
+    if re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]*", first):
+        return first.lower()
+    return None
+
+
+def parse_css_to_inline_styles(css_text: str, primary_color: Optional[str] = None) -> Dict[str, str]:
+    variables = {"--md-primary-color": primary_color} if primary_color else None
+    css_text = resolve_css_vars(css_text, variables)
+    css_text = re.sub(r"/\*.*?\*/", "", css_text, flags=re.S)
+
+    styles_map: Dict[str, str] = {}
+    for match in re.finditer(r"([^{}]+)\{([^{}]+)\}", css_text, flags=re.S):
+        selectors = [selector.strip() for selector in match.group(1).split(",")]
+        style = style_dict_to_text(parse_style(match.group(2)))
+        if not style:
             continue
-        if selector.startswith('.') and ' ' in selector:
-            continue
-        if selector.startswith('#'):
-            continue
-        
-        # 清理声明
-        clean_decls = []
-        for decl in declarations.split(';'):
-            decl = decl.strip()
-            if not decl or decl.startswith('/*'):
+        for selector in selectors:
+            tag = tag_from_selector(selector)
+            if not tag:
                 continue
-            # 跳过不兼容的属性
-            if any(skip in decl for skip in ['display: table', '-webkit-', 'transform-origin', 'transform: scale']):
-                continue
-            if 'var(' in decl:
-                continue
-            clean_decls.append(decl)
-        
-        if clean_decls:
-            # 提取标签名
-            tag = selector.split(',')[0].strip().split(' ')[0].split('>')[0].strip()
-            styles_map[tag] = '; '.join(clean_decls)
-    
+            styles_map[tag] = merge_styles(styles_map.get(tag, ""), style)
     return styles_map
 
 
-def convert_md_to_html(md_text, styles_map, primary_color='#20B2AA'):
-    """将Markdown转换为带内联样式的HTML"""
-    # 加粗文字的统一颜色
-    strong_style = f'color:{primary_color}; font-weight:bold;'
-    # 引用块默认样式
-    blockquote_default = f'font-style:normal; padding:1em; border-left:4px solid {primary_color}; border-radius:6px; background:rgba(0,0,0,0.03); margin-bottom:1em;'
-    lines = md_text.split('\n')
-    html_lines = []
-    in_list = False
-    in_blockquote = False
-    in_table = False
-    in_code_block = False
-    
-    for line in lines:
-        stripped = line.strip()
-        
-        # 代码块
-        if stripped.startswith('```'):
-            if in_code_block:
-                html_lines.append('</code></pre>')
-                in_code_block = False
-            else:
-                html_lines.append('<pre style="font-size:90%; overflow-x:auto; border-radius:8px; padding:0.5em 1em 1em; background:#f6f8fa; margin:10px 8px;"><code style="font-size:90%; color:#d14; background:none; white-space:pre-wrap;">')
-                in_code_block = True
+def load_inline_template(path: Path) -> Dict[str, str]:
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    styles = data.get("styles", data)
+    if not isinstance(styles, dict):
+        raise ValueError(f"inline 模板格式错误: {path}")
+
+    result: Dict[str, str] = {}
+    for key, value in styles.items():
+        if not isinstance(value, str):
             continue
-        
-        if in_code_block:
-            html_lines.append(stripped)
-            continue
-        
-        # 空行
-        if not stripped:
-            if in_list:
-                html_lines.append('</ul>' if html_lines[-2].startswith('<li') or '<ul>' in ''.join(html_lines[-5:]) else '</ol>')
-                in_list = False
-            if in_blockquote:
-                html_lines.append('</p></blockquote>')
-                in_blockquote = False
-            if in_table:
-                html_lines.append('</table>')
-                in_table = False
-            continue
-        
-        # 标题
-        heading_match = re.match(r'^(#{1,6})\s+(.+)$', stripped)
-        if heading_match:
-            level = len(heading_match.group(1))
-            text = heading_match.group(2)
-            tag = f'h{level}'
-            style = styles_map.get(tag, '')
-            html_lines.append(f'<{tag} style="{style}">{text}</{tag}>')
-            continue
-        
-        # 引用块
-        if stripped.startswith('>'):
-            if not in_blockquote:
-                style = styles_map.get('blockquote', blockquote_default)
-                html_lines.append(f'<blockquote style="{style}"><p style="margin:0; letter-spacing:0.1em;">')
-                in_blockquote = True
-            content = stripped.lstrip('> ').strip()
-            # 处理加粗
-            content = re.sub(r'\*\*(.+?)\*\*', rf'<strong style="{strong_style}">\1</strong>', content)
-            html_lines.append(content)
-            continue
-        
-        # 图片
-        img_match = re.match(r'!\[([^\]]*)\]\(([^)]+)\)', stripped)
-        if img_match:
-            alt = img_match.group(1)
-            src = img_match.group(2)
-            style = styles_map.get('img', 'display:block; max-width:100%; margin:0.1em auto 0.5em; border-radius:4px;')
-            html_lines.append(f'<img src="{src}" alt="{alt}" style="{style}" />')
-            # 图注
-            continue
-        
-        # 分隔线
-        if stripped in ['---', '***', '___']:
-            style = 'border-style:solid; border-width:2px 0 0; border-color:rgba(0,0,0,0.1); height:0.4em; margin:1.5em 0;'
-            html_lines.append(f'<hr style="{style}" />')
-            continue
-        
-        # 表格
-        if stripped.startswith('|'):
-            if not in_table:
-                html_lines.append('<table style="border-collapse:collapse; margin:1.5em 8px; width:100%;">')
-                in_table = True
-            cells = [c.strip() for c in stripped.split('|')[1:-1]]
-            is_header = all(c.replace('-', '').replace(':', '') == '' for c in cells)
-            if is_header:
-                continue
-            tag = 'th' if not any('<td' in l for l in html_lines[-3:]) and '<tr>' not in ''.join(html_lines[-5:]) else 'td'
-            if tag == 'th':
-                style = 'border:1px solid #dfdfdf; padding:0.25em 0.5em; font-weight:bold; background:rgba(0,0,0,0.05);'
-            else:
-                style = 'border:1px solid #dfdfdf; padding:0.25em 0.5em;'
-            row = ''.join(f'<{tag} style="{style}">{c}</{tag}>' for c in cells)
-            html_lines.append(f'<tr>{row}</tr>')
-            continue
-        
-        # 无序列表
-        if stripped.startswith('- ') or stripped.startswith('* '):
-            if not in_list:
-                style = styles_map.get('ul', 'list-style:circle; padding-left:1em; margin-left:0;')
-                html_lines.append(f'<ul style="{style}">')
-                in_list = True
-            content = stripped[2:]
-            content = re.sub(r'\*\*(.+?)\*\*', rf'<strong style="{strong_style}">\1</strong>', content)
-            html_lines.append(f'<li style="display:block; margin:0.2em 8px;">{content}</li>')
-            continue
-        
-        # 有序列表
-        ol_match = re.match(r'^(\d+)\.\s+(.+)$', stripped)
-        if ol_match:
-            if not in_list:
-                style = styles_map.get('ol', 'padding-left:1em; margin-left:0;')
-                html_lines.append(f'<ol style="{style}">')
-                in_list = True
-            content = ol_match.group(2)
-            content = re.sub(r'\*\*(.+?)\*\*', rf'<strong style="{strong_style}">\1</strong>', content)
-            html_lines.append(f'<li style="display:block; margin:0.2em 8px;">{content}</li>')
-            continue
-        
-        # 普通段落
-        style = styles_map.get('p', 'margin:1.5em 8px; letter-spacing:0.1em;')
-        # 处理行内格式
-        content = re.sub(r'\*\*(.+?)\*\*', rf'<strong style="{strong_style}">\1</strong>', stripped)
-        content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
-        content = re.sub(r'`([^`]+)`', r'<code style="font-size:90%; color:#d14; background:rgba(27,31,35,0.05); padding:3px 5px; border-radius:4px;">\1</code>', content)
-        content = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2" style="color:#576b95; text-decoration:none;">\1</a>', content)
-        html_lines.append(f'<p style="{style}">{content}</p>')
-    
-    # 关闭未闭合的标签
-    if in_list:
-        html_lines.append('</ul>')
-    if in_blockquote:
-        html_lines.append('</p></blockquote>')
-    if in_table:
-        html_lines.append('</table>')
-    
-    return '\n'.join(html_lines)
+        tag = "section" if key == "container" else key
+        result[tag] = style_dict_to_text(parse_style(value))
+    return result
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Markdown → 微信公众号HTML转换器')
-    parser.add_argument('input', help='输入Markdown文件路径')
-    parser.add_argument('--output', '-o', help='输出HTML文件路径（默认与输入同名.html）')
-    parser.add_argument('--theme', '-t', choices=['default', 'grace', 'simple'], default='default', help='doocs/md主题（默认default）')
-    parser.add_argument('--template', help='自定义CSS模板文件路径')
-    parser.add_argument('--primary-color', '-c', default='#20B2AA', help='主题色（默认#20B2AA）')
-    
-    args = parser.parse_args()
-    
-    # 读取Markdown
-    with open(args.input, 'r', encoding='utf-8') as f:
-        md_text = f.read()
-    
-    # 读取CSS
-    if args.template:
-        css_path = args.template
-        with open(css_path, 'r', encoding='utf-8') as f:
-            css_text = f.read()
+def sibling_inline_template(css_path: Path) -> Optional[Path]:
+    stem = css_path.stem
+    candidates = []
+    if stem.endswith("_inline"):
+        candidates.append(css_path)
     else:
-        theme_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'templates', 'themes')
-        # 先加载 base.css 作为基础层，再加载具体主题作为覆盖层
-        base_path = os.path.join(theme_dir, 'doocs_base.css')
-        theme_path = os.path.join(theme_dir, f'doocs_{args.theme}.css')
-        css_text = ''
-        if os.path.exists(base_path):
-            with open(base_path, 'r', encoding='utf-8') as f:
-                css_text += f.read() + '\n'
-        with open(theme_path, 'r', encoding='utf-8') as f:
-            css_text += f.read()
-    
-    # 解析CSS为内联样式
-    styles_map = parse_css_to_inline_styles(css_text, args.primary_color)
-    
-    # 转换
-    html_body = convert_md_to_html(md_text, styles_map, args.primary_color)
-    
-    # 包装完整HTML
-    html = f'''<!DOCTYPE html>
+        candidates.append(css_path.with_name(f"{stem}_inline.json"))
+        candidates.append(css_path.with_suffix(".json"))
+    for candidate in candidates:
+        if candidate.exists() and candidate.suffix.lower() == ".json":
+            return candidate
+    return None
+
+
+def default_styles(primary_color: str) -> Dict[str, str]:
+    return {
+        tag: style.format(primary=primary_color)
+        for tag, style in DEFAULT_STYLES.items()
+    }
+
+
+def load_styles(
+    theme: str = "default",
+    template: Optional[str] = None,
+    inline_template: Optional[str] = None,
+    primary_color: str = "#20B2AA",
+) -> Dict[str, str]:
+    styles = default_styles(primary_color)
+
+    theme_dir = Path(__file__).resolve().parent.parent / "templates" / "themes"
+    if template:
+        css_path = Path(template)
+        css_text = css_path.read_text(encoding="utf-8")
+        styles = merge_style_maps(styles, parse_css_to_inline_styles(css_text, primary_color))
+        auto_inline = sibling_inline_template(css_path)
+        if auto_inline:
+            styles = merge_style_maps(styles, load_inline_template(auto_inline))
+    else:
+        css_text = ""
+        base_path = theme_dir / "doocs_base.css"
+        theme_path = theme_dir / f"doocs_{theme}.css"
+        if base_path.exists():
+            css_text += base_path.read_text(encoding="utf-8") + "\n"
+        css_text += theme_path.read_text(encoding="utf-8")
+        styles = merge_style_maps(styles, parse_css_to_inline_styles(css_text, primary_color))
+
+    if inline_template:
+        styles = merge_style_maps(styles, load_inline_template(Path(inline_template)))
+
+    styles["strong"] = merge_styles(styles.get("strong", ""), f"color:{primary_color}; font-weight:bold;")
+    return styles
+
+
+def escape_raw_html(md_text: str) -> str:
+    def replace(match: re.Match) -> str:
+        token = match.group(0)
+        return token.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    return re.sub(r"</?[A-Za-z][^>\n]*>|<!--.*?-->", replace, md_text, flags=re.S)
+
+
+def normalize_list_indentation(md_text: str) -> str:
+    normalized: List[str] = []
+    for line in md_text.splitlines():
+        match = re.match(r"^( +)((?:[-*+])|(?:\d+\.))\s+", line)
+        if match:
+            leading = len(match.group(1))
+            if leading % 4 != 0 and leading % 2 == 0:
+                line = (" " * ((leading // 2) * 4)) + line[leading:]
+        normalized.append(line)
+    return "\n".join(normalized)
+
+
+def normalize_task_lists(md_text: str) -> str:
+    def replace(match: re.Match) -> str:
+        prefix = match.group(1)
+        checked = match.group(2).lower() == "x"
+        symbol = "☑" if checked else "☐"
+        return f"{prefix}{symbol} "
+
+    return re.sub(r"^(\s*[-*+]\s+)\[([ xX])\]\s+", replace, md_text, flags=re.M)
+
+
+def extract_math_tokens(md_text: str) -> Tuple[str, Dict[str, Dict[str, str]]]:
+    tokens: Dict[str, Dict[str, str]] = {}
+
+    def replace_block(match: re.Match) -> str:
+        token = f"@@P2W_MATH_BLOCK_{len(tokens)}@@"
+        tokens[token] = {"type": "math_block", "value": match.group(1).strip()}
+        return f"\n\n{token}\n\n"
+
+    def replace_inline(match: re.Match) -> str:
+        token = f"@@P2W_MATH_INLINE_{len(tokens)}@@"
+        tokens[token] = {"type": "math_inline", "value": match.group(1).strip()}
+        return token
+
+    md_text = re.sub(r"\$\$\s*([\s\S]+?)\s*\$\$", replace_block, md_text)
+    md_text = re.sub(r"(?<!\$)\$([^$\n]+?)\$(?!\$)", replace_inline, md_text)
+    return md_text, tokens
+
+
+def prepare_markdown(md_text: str) -> Tuple[str, Dict[str, Dict[str, str]]]:
+    md_text = normalize_task_lists(md_text)
+    md_text, math_tokens = extract_math_tokens(md_text)
+    md_text = normalize_list_indentation(md_text)
+    return escape_raw_html(md_text), math_tokens
+
+
+def markdown_to_fragment(md_text: str, math_tokens: Optional[Dict[str, Dict[str, str]]] = None) -> str:
+    safe_md, extracted_tokens = prepare_markdown(md_text)
+    if math_tokens is not None:
+        math_tokens.update(extracted_tokens)
+    return markdown.markdown(
+        safe_md,
+        extensions=["extra", "sane_lists", "smarty", "footnotes"],
+        output_format="html5",
+    )
+
+
+def clean_attrs(tag: Tag) -> None:
+    allowed = ALLOWED_ATTRS.get(tag.name, set())
+    preserved = {key: value for key, value in tag.attrs.items() if key in allowed}
+    if "id" in tag.attrs:
+        preserved["id"] = tag.attrs["id"]
+    if "style" in tag.attrs:
+        preserved["style"] = tag.attrs["style"]
+    tag.attrs.clear()
+    tag.attrs.update(preserved)
+
+
+def apply_inline_styles(fragment: str, styles_map: Dict[str, str]) -> str:
+    soup = BeautifulSoup(fragment, "html.parser")
+
+    for tag in list(soup.find_all(True)):
+        clean_attrs(tag)
+        style_key = "code_block" if tag.name == "code" and tag.parent and tag.parent.name == "pre" else tag.name
+        style = styles_map.get(style_key, "")
+        if style:
+            tag["style"] = style
+
+    return "\n".join(str(child) for child in soup.contents)
+
+
+def replace_enhanced_text_nodes(
+    soup: BeautifulSoup,
+    styles_map: Dict[str, str],
+    math_tokens: Dict[str, Dict[str, str]],
+) -> None:
+    token_re = re.compile(r"@@P2W_MATH_(?:INLINE|BLOCK)_\d+@@")
+    highlight_re = re.compile(r"==(.+?)==")
+    combined_re = re.compile(r"(@@P2W_MATH_(?:INLINE|BLOCK)_\d+@@|==.+?==)")
+
+    for text_node in list(soup.find_all(string=True)):
+        parent = text_node.parent
+        if parent and parent.name in {"code", "pre"}:
+            continue
+
+        text = str(text_node)
+        if not token_re.search(text) and not highlight_re.search(text):
+            continue
+
+        pieces = combined_re.split(text)
+        new_nodes = []
+        for piece in pieces:
+            if not piece:
+                continue
+            if piece in math_tokens:
+                token = math_tokens[piece]
+                tag = soup.new_tag("span")
+                tag.string = token["value"]
+                tag["style"] = styles_map.get(token["type"], "")
+                new_nodes.append(tag)
+            elif piece.startswith("==") and piece.endswith("=="):
+                tag = soup.new_tag("mark")
+                tag.string = piece[2:-2]
+                style = styles_map.get("mark", "")
+                if style:
+                    tag["style"] = style
+                new_nodes.append(tag)
+            else:
+                new_nodes.append(NavigableString(piece))
+
+        for node in reversed(new_nodes):
+            text_node.insert_after(node)
+        text_node.extract()
+
+
+def convert_md_to_html(md_text: str, styles_map: Dict[str, str], primary_color: str = "#20B2AA") -> str:
+    if "strong" not in styles_map:
+        styles_map = dict(styles_map)
+        styles_map["strong"] = f"color:{primary_color}; font-weight:bold;"
+    math_tokens: Dict[str, Dict[str, str]] = {}
+    fragment = markdown_to_fragment(md_text, math_tokens)
+    soup = BeautifulSoup(fragment, "html.parser")
+    replace_enhanced_text_nodes(soup, styles_map, math_tokens)
+    return apply_inline_styles("\n".join(str(child) for child in soup.contents), styles_map)
+
+
+def wrap_html(html_body: str, styles_map: Dict[str, str]) -> str:
+    section_style = styles_map.get("section", DEFAULT_STYLES["section"])
+    return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -281,21 +395,55 @@ def main():
 <title>微信公众号文章</title>
 </head>
 <body style="margin:0; padding:0; font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Microsoft YaHei',sans-serif; font-size:15px; line-height:1.75; color:#333;">
-<section style="padding:16px; max-width:100%; box-sizing:border-box;">
+<section style="{section_style}">
 {html_body}
 </section>
 </body>
-</html>'''
-    
-    # 输出
-    output_path = args.output or args.input.rsplit('.', 1)[0] + '.html'
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html)
-    
-    print(f"✅ 转换完成: {output_path}")
-    print(f"   主题: {args.template or 'doocs/' + args.theme}")
-    print(f"   主题色: {args.primary_color}")
+</html>"""
 
 
-if __name__ == '__main__':
-    main()
+def render_markdown_file(
+    input_path: Path,
+    output_path: Path,
+    theme: str,
+    template: Optional[str],
+    inline_template: Optional[str],
+    primary_color: str,
+) -> None:
+    md_text = input_path.read_text(encoding="utf-8")
+    styles_map = load_styles(theme, template, inline_template, primary_color)
+    html_body = convert_md_to_html(md_text, styles_map, primary_color)
+    html = wrap_html(html_body, styles_map)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
+
+
+def main(argv: Optional[Iterable[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Markdown → 微信公众号HTML转换器")
+    parser.add_argument("input", help="输入Markdown文件路径")
+    parser.add_argument("--output", "-o", help="输出HTML文件路径（默认与输入同名.html）")
+    parser.add_argument("--theme", "-t", choices=["default", "grace", "simple"], default="default", help="doocs/md主题")
+    parser.add_argument("--template", help="自定义CSS模板文件路径")
+    parser.add_argument("--inline-template", help="自定义内联样式 JSON 文件路径")
+    parser.add_argument("--primary-color", "-c", default="#20B2AA", help="主题色")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    input_path = Path(args.input)
+    output_path = Path(args.output) if args.output else input_path.with_suffix(".html")
+    render_markdown_file(
+        input_path=input_path,
+        output_path=output_path,
+        theme=args.theme,
+        template=args.template,
+        inline_template=args.inline_template,
+        primary_color=args.primary_color,
+    )
+
+    print(f"转换完成: {output_path}")
+    print(f"主题: {args.template or 'doocs/' + args.theme}")
+    print(f"主题色: {args.primary_color}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
